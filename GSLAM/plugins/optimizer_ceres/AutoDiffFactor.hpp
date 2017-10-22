@@ -52,6 +52,44 @@ public:
     }
 };
 
+struct EssentialResiduals
+{
+    EssentialResiduals(double* _match):match(_match){}
+
+    template <typename T> bool
+    operator()
+    (
+            const T* const Rt,    // rx,ry,rz,rw,x,y,z
+            T* residuals          // distance
+            )
+    const
+    {
+        T tcrossp[3] ={Rt[1]*match[2]-Rt[2]*match[1],
+                       Rt[2]*match[0]-Rt[0]*match[2],
+                       Rt[0]*match[1]-Rt[1]*match[0]};
+        T Rinv[3] ={-Rt[3],-Rt[4],-Rt[5]};
+
+        T p[3];
+        // Rotate the point according the camera rotation
+        ceres::AngleAxisRotatePoint(Rinv,tcrossp,p);
+        residuals[0]=(match[0]*p[0]+match[1]*p[1]+p[2])/sqrt(1e-10+p[1]*p[1]+p[2]*p[2]);
+        return true;
+    }
+
+    static int num_residuals() { return 2;}
+
+    double*     match;// x1,y1,z1,x2,y2,z2
+};
+
+class EssentialCostFunction: public ceres::AutoDiffCostFunction<EssentialResiduals, 1, 6>
+{
+public:
+    EssentialCostFunction(double* match)
+        :ceres::AutoDiffCostFunction<EssentialResiduals, 1, 6>
+         (new EssentialResiduals(match))
+    {}
+};
+
 struct IdeaProjectResiduals
 {
     IdeaProjectResiduals(const double* const pCamera,const double* const pWorld=NULL)

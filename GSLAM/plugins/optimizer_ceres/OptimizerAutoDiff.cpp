@@ -78,12 +78,7 @@ bool OptimizerAutoDiffCeres::optimizePose(std::vector<std::pair<CameraAnchor,Cam
     if(matches.size()<5||matches.size()!=firstIDepth.size()) return false;
 
     ceres::Problem problem;
-#ifdef USE_PARAMENTERIZATION
-    auto invPose=relativePose.inverse();
-    double* se3=(double*)&invPose;
-#else
     auto se3=relativePose.inverse().ln();
-#endif
 
     // Set a LossFunction to be less penalized by false measurements
     //  - set it to NULL if you don't want use a lossFunction.
@@ -97,23 +92,22 @@ bool OptimizerAutoDiffCeres::optimizePose(std::vector<std::pair<CameraAnchor,Cam
         double* match=(double*)&matches[i];
         double* idepth=(double*)&firstIDepth[i];
 
-#ifdef USE_PARAMENTERIZATION
-        ceres::CostFunction* costFunction=new InvDepthRelativePoseParameterizationCostFunction(match);
-        problem.AddResidualBlock(costFunction,p_LossFunction,idepth,se3);
-#else
-        ceres::CostFunction* costFunction=new InvDepthRelativePoseCostFunction(match);
-        problem.AddResidualBlock(costFunction,
-                                 p_LossFunction,
-                                 idepth,(double*)&se3);
-#endif
-        if(firstIDepth[i].y==0)
+        if(idepth[1]==0)
+        {
+            ceres::CostFunction* costFunction=new InvDepthRelativePoseCostFunction(match);
+            problem.AddResidualBlock(costFunction,
+                                     p_LossFunction,
+                                     idepth,(double*)&se3);
             problem.SetParameterBlockConstant(idepth);
+        }
+        else
+        {
+            ceres::CostFunction* costFunction=new EssentialCostFunction(match);
+            problem.AddResidualBlock(costFunction,
+                                     p_LossFunction,
+                                     (double*)&se3);
+        }
     }
-
-#ifdef USE_PARAMENTERIZATION
-    problem.SetParameterization(se3,new ceres::ProductParameterization(new ceres::QuaternionParameterization(),
-                                                                                     new ceres::IdentityParameterization(3)));
-#endif
 
 
     auto ceres_config_options=getOption(_config);
@@ -146,11 +140,7 @@ bool OptimizerAutoDiffCeres::optimizePose(std::vector<std::pair<CameraAnchor,Cam
                       << " Time (s): " << summary.total_time_in_seconds << "\n"
                       << std::endl;
         }
-#ifdef USE_PARAMENTERIZATION
-        relativePose=invPose.inverse();
-#else
         relativePose=GSLAM::SE3::exp(se3).inverse();
-#endif
     }
 
     return true;
